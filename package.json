@@ -2,7 +2,8 @@
   "name": "yazue-profile",
   "private": true,
   "scripts": {
-    "render": "node render-profile.mjs"
+    "render": "node render-profile.mjs",
+    "test": "node --test calendar.test.mjs"
   },
   "dependencies": {
     "gifenc": "1.0.3"
