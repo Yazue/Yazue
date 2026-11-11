@@ -1,0 +1,10 @@
+{
+  "name": "yazue-profile",
+  "private": true,
+  "scripts": {
+    "render": "node render-profile.mjs"
+  },
+  "dependencies": {
+    "gifenc": "1.0.3"
+  }
+}
