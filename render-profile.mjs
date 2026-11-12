@@ -8,23 +8,26 @@ const { GIFEncoder } = gifenc;
 const WIDTH = 384;
 const HEIGHT = 132;
 const SCALE = 2;
-const FRAME_MS = 100;
+const FRAME_MS = 80;
 const DURATION = 10.4;
 const FOLD_START = 4.45;
 const FOLD_END = 6.65;
+const RULE_TOP = 8;
+const RULE_SPACING = 5;
+const SLAM_TIME = 9.28;
 
 const themes = {
   light: {
     bg: "eee9de", grid: "ded5c7", frame: "b4a8a2", text: "36334a",
     shadow: "dbd0c5", cover: "544862", spine: "302b42",
     paper: "fbf0d6", paperEdge: "c2a886", rule: "dfccaa", lining: "e8d9bd",
-    crease: "dec39e", cell: "ddceb5",
+    crease: "dec39e",
   },
   dark: {
     bg: "292739", grid: "383548", frame: "58516a", text: "eee5d3",
     shadow: "222031", cover: "615371", spine: "1a1828",
     paper: "ebdfc6", paperEdge: "a58e80", rule: "cab59e", lining: "d6c5ae",
-    crease: "c7ac94", cell: "c8b79f",
+    crease: "c7ac94",
   },
 };
 
@@ -84,12 +87,12 @@ function createCanvas(colors) {
     }
   }
 
-  function word(value, x, y, size, color) {
+  function word(value, x, y, size, color, paint = rect) {
     Array.from(value).forEach((letter, index) => {
       if (letter === " ") return;
       letters[letter].forEach((row, dy) => {
         Array.from(row).forEach((ink, dx) => {
-          if (ink === "1") rect(x + (6 * index + dx) * size, y + dy * size, size, size, color);
+          if (ink === "1") paint(x + (6 * index + dx) * size, y + dy * size, size, size, color);
         });
       });
     });
@@ -132,36 +135,55 @@ function drawBackdrop({ rect, word }) {
   rect(43, 41, 68, 1, "frame");
 }
 
-function drawBook({ polygon, rect, word }, open) {
-  const left = Math.round(mix(92, 17, open));
-  const right = Math.round(mix(202, 264, open));
-  const top = Math.round(mix(57, 48, open));
-  polygon([[left - 8, 108], [left + 7, 101], [right + 16, 99], [right + 20, 109],
-    [right + 8, 114], [left + 4, 115]], "shadow");
-  polygon([[left + 9, top], [right - 12, top - 4], [right + 4, 104], [right - 2, 109],
-    [left + 5, 112], [left - 2, 108]], "spine");
-  polygon([[left + 10, top + 4], [right - 12, top], [right + 1, 103],
-    [right - 6, 106], [left + 6, 109], [left + 1, 106]], "paperEdge");
-  polygon([[left + 9, top], [right - 12, top - 4], [right + 1, 101],
-    [left + 1, 106]], "cover");
-  rect(left + 10, top + 4, 1, 44, "spine");
-  if (open < 0.28) {
-    word("DEATH", left + 23, top + 6, 2, "teeth");
-    word("NOTE", left + 23, top + 22, 2, "teeth");
-    rect(left + 23, top + 39, 23, 1, "appleShadow");
-  } else {
-    const spine = Math.round((left + right) / 2);
-    const pageLeft = Math.round(mix(spine - 15, left + 12, open));
-    const pageRight = right - 12;
-    polygon([[pageLeft, top + 4], [spine - 15, top + 3], [spine, top + 10],
-      [spine, 103], [spine - 15, 99], [pageLeft - 7, 102]], "lining");
-    polygon([[spine, top + 10], [spine + 16, top + 2], [pageRight, top + 1],
-      [pageRight + 10, 98], [spine + 16, 100], [spine, 103]], "lining");
-    rect(spine - 1, top + 11, 2, 44, "paperEdge");
-    for (let y = top + 16; y < 96; y += 7) {
-      rect(pageLeft + 4, y, spine - pageLeft - 18, 1, "rule");
-      rect(spine + 16, y, pageRight - spine - 18, 1, "rule");
+function drawBook({ polygon, word }, angle, drop) {
+  // The front cover and its lettering share the same projection around the spine.
+  const width = 116;
+  const height = 55;
+  const side = Math.cos(angle);
+  const rise = Math.sin(angle);
+  const point = (u, v, depth = 0) => [
+    Math.round(139 + v * 0.07 + u * side),
+    Math.round(53 + v + drop + depth - u * (0.065 * Math.abs(side) + 0.36 * rise)),
+  ];
+  const panel = (u, v, w, h, color, depth = 0) => {
+    polygon([point(u, v, depth), point(u + w, v, depth),
+      point(u + w, v + h, depth), point(u, v + h, depth)], color);
+  };
+
+  const shadowLeft = Math.min(131, point(width, height)[0] - 8);
+  polygon([[shadowLeft + 6, 104], [260, 101], [276, 109], [267, 115],
+    [shadowLeft, 115]], "shadow");
+
+  // The back cover and right stack stay on the table as the front cover swings.
+  const stack = (u, v, depth = 0) => [
+    Math.round(139 + v * 0.07 + u), Math.round(53 + v - u * 0.065 + drop + depth),
+  ];
+  const bookLayer = (u, v, w, h, color, depth = 0) => {
+    polygon([stack(u, v, depth), stack(u + w, v, depth),
+      stack(u + w, v + h, depth), stack(u, v + h, depth)], color);
+  };
+  bookLayer(0, 0, width, height, "spine", 6);
+  bookLayer(2, 2, width - 5, height - 3, "paperEdge", 4);
+  bookLayer(2, 2, width - 6, height - 4, "lining", 2);
+  for (let row = 0; row < 7; row++) {
+    bookLayer(10, 11 + row * RULE_SPACING, width - 25, 1, "rule", 2);
+  }
+
+  const inside = side < 0;
+  panel(0, 0, width, height, "spine", 2);
+  panel(0, 0, width, height, "cover");
+  if (inside) {
+    panel(3, 3, width - 8, height - 7, "paperEdge");
+    panel(3, 3, width - 10, height - 9, "lining");
+    for (let row = 0; row < 7; row++) {
+      panel(11, 11 + row * RULE_SPACING, width - 26, 1, "rule");
     }
+  } else {
+    panel(5, 3, 1, height - 6, "spine");
+    panel(width - 10, 5, 1, height - 10, "frame");
+    word("DEATH", 20, 10, 2, "teeth", panel);
+    word("NOTE", 20, 27, 2, "teeth", panel);
+    panel(20, 45, 22, 1, "appleShadow");
   }
 }
 
@@ -189,12 +211,12 @@ function drawSpark({ rect }, x, y, size, color) {
 }
 
 function calendarGeometry(calendar, time) {
-  const reveal = ease(progress(time, 1.4, 2.9));
+  const reveal = ease(progress(time, 1.79, 2.9));
   const fold = progress(time, FOLD_START, FOLD_END) * (calendar.columns + 12) - 6;
   const visible = Math.ceil(calendar.columns * reveal);
-  const lift = Math.round(13 * Math.sin(reveal * Math.PI));
+  const lift = Math.round(9 * Math.sin(reveal * Math.PI));
   const vanish = ease(progress(time, 6.69, 7.13));
-  const left = Math.round(mix(62, 27, ease(progress(time, 1.4, 1.93))));
+  const left = Math.round(mix(139, 27, reveal));
 
   function edge(column) {
     const bunched = clamp((fold - column) / 4);
@@ -215,7 +237,6 @@ function drawCalendar({ rect, polygon }, calendar, sheet, time) {
   if (sheet.visible === 0 || sheet.vanish >= 1) return;
 
   const pageHeight = Math.round(42 * (1 - sheet.vanish));
-  const calendarTop = 7;
   const first = sheet.edge(0);
   const last = sheet.edge(sheet.visible);
   if (pageHeight < 2) return;
@@ -231,12 +252,18 @@ function drawCalendar({ rect, polygon }, calendar, sheet, time) {
     const edgeX = a.x + width;
     polygon([[a.x, a.y], [edgeX, b.y], [edgeX, b.y + pageHeight], [a.x, a.y + pageHeight]],
       bunched && column % 2 ? "crease" : "paper");
-    if (width < 3 || pageHeight < 37) continue;
-
     for (let row = 0; row < 7; row++) {
+      const offset = RULE_TOP + row * RULE_SPACING;
+      if (offset >= pageHeight - 1) break;
+      const y = a.y + offset;
+      const nextY = b.y + offset;
+      polygon([[a.x, y], [edgeX, nextY], [edgeX, nextY + 1], [a.x, y + 1]], "rule");
       const level = calendar.levels[column][row];
-      const fill = level && time < releaseTime(column, calendar.columns) ? `ink${level}` : "cell";
-      rect(a.x + 1, Math.round((a.y + b.y) / 2) + calendarTop + row * 4, 3, 3, fill);
+      if (level && width >= 3 && time < releaseTime(column, calendar.columns)) {
+        const baseline = Math.round((y + nextY) / 2);
+        rect(a.x + 1, baseline - 2, 3, 3, `ink${level}`);
+        rect(a.x, baseline, 1, 1, `ink${level}`);
+      }
     }
     if (column % 8 === 0) rect(a.x + 1, a.y + 2, 2, 1, "paperEdge");
   }
@@ -270,14 +297,16 @@ function prepareCalendar({ columns, days }) {
   )));
   const flights = activeDays.map((day) => {
     const start = releaseTime(day.column, columns);
-    const source = calendarGeometry({ columns }, start).edge(day.column);
+    const { edge } = calendarGeometry({ columns }, start);
+    const source = edge(day.column);
+    const next = edge(day.column + 1);
     const duration = 0.72 + (day.row % 3) * 0.13;
     return {
       ...day,
       start,
       end: start + duration,
       sourceX: source.x + 2,
-      sourceY: source.y + 8 + day.row * 4,
+      sourceY: Math.round((source.y + next.y) / 2) + RULE_TOP + day.row * RULE_SPACING - 1,
       large: largeDays.has(day),
     };
   });
@@ -334,8 +363,12 @@ function drawFrame(colors, calendar, time) {
   const { catchTime, flights } = calendar;
   const mouthTime = catchTime + 0.6;
   const biteTime = mouthTime + 0.13;
-  const close = ease(progress(time, 8.55, 9.6));
-  const open = ease(progress(time, 0.85, 1.93)) * (1 - close);
+  const open = ease(progress(time, 0.85, 1.93));
+  const close = progress(time, 8.55, SLAM_TIME) ** 2.25;
+  const settle = progress(time, SLAM_TIME, SLAM_TIME + 0.34);
+  const bounce = Math.sin(settle * Math.PI) * (1 - settle);
+  const angle = Math.PI * open * (1 - close) + 0.27 * bounce;
+  const drop = Math.round(3 * (1 - settle) ** 3) * Number(time >= SLAM_TIME);
   const sheet = calendarGeometry(calendar, time);
 
   const reach = ease(progress(time, 3.84, 4.4));
@@ -350,7 +383,7 @@ function drawFrame(colors, calendar, time) {
   const blink = [0.4, 3.5, 8.5, 9.7].some((blinkAt) => time >= blinkAt && time < blinkAt + 0.16);
 
   drawBackdrop(canvas);
-  drawBook(canvas, open);
+  drawBook(canvas, angle, drop);
   drawCalendar(canvas, calendar, sheet, time);
   drawBookmark(canvas, sheet, hand, time);
   drawRyuk(canvas, { hand, blink, biting: time >= mouthTime && time < biteTime + 0.23, lean });
@@ -362,6 +395,7 @@ function drawFrame(colors, calendar, time) {
     drawApple(canvas, x, y);
   }
   drawImpact(canvas, 188, 61, time, 0.85, 7);
+  drawImpact(canvas, 252, 100, time, SLAM_TIME, 5);
   drawFlights(canvas, calendar, time);
   if (flights.length && time >= catchTime && time < biteTime + 0.31) {
     drawApple(canvas, hand.x, hand.y - 4, 1, time >= biteTime);
